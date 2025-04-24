@@ -27,6 +27,8 @@ A specific template image (patchTemplate.tif) available on GitHub
 
 *patchTemplate.tif* files
 
+*Multi-Template-Matching* + *IJ-OpenCV* FIJI Plug-in
+*IJPB* FIJI Plug-in
 ### Version history
 
 Version 0.9 released on April 24, 2025.
