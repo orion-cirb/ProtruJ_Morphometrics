@@ -21,10 +21,10 @@
 * Ask the user to rotate the image so the patches are pointing to the right
 * Detect patches in the 3rd channel using Multi-Template-Matching
 * Segment protrusions in 2nd channel
-* For each detected patch (= ROI):
+* For each detected patch:
      * Crop the protrusions binary mask around it, filter out small objects, and clear the interior of the patch
      * Run skeletonization + geodesic distance map + local thickness from the resulting mask
-     * For each protrusion (= skeleton segment), compute the following: nearest corner of the patch, maximum distance from the patch, direction of the centroid, and mean thickness
+     * For each protrusion (= skeleton), compute the following: nearest corner of the patch, maximum distance from the patch, direction of the centroid, and mean thickness
 
 ### Dependencies
 
