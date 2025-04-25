@@ -18,6 +18,7 @@
 
 ### Macro description
 
+* Please rotate the image so the patches are pointing to the right
 * Detect patches in the 3rd channel using Multi-Template-Matching
 * Segment protrusions in 2nd channel
 * For each detected patch (= ROI):
