@@ -9,26 +9,28 @@
 
 ### Images description
 
-3 channels images, Nucleus, Protrusions, Bright field
+3D images taken with x10 objective on a spinning-disk microscope.
 
-A specific template image (patchTemplate.tif) available on GitHub 
+3 channels:
+  1. DAPI nuclei (not used)
+  2. GFP protrusions
+  3. Brightfield patches
 
-     
 ### Macro description
 
-1. Find patches based on the bright field channel.
-2. Segment the Protrusions channel, save the result as "fluoImage.tif"  
-3. Enlarge each patches Roi, keep only patch+protrusions, filter out small protrusions. 
-4. Skeletonize the protrusions, run Geodesic map and run Local Thickness map and save the image for each pore.
-5. Find the closest corner and also the angle based on the Centroid of the protrusion.
-6. Write a global result file. 
+* Detect patches in the 3rd channel using Multi-Template-Matching
+* Segment protrusions in 2nd channel
+* For each detected patch (= ROI):
+     * Crop the protrusions binary mask around it, filter out small objects, and clear the interior of the patch
+     * Run skeletonization + geodesic distance map + local thickness from the resulting mask
+     * For each protrusion (= skeleton segment), compute the following: nearest corner of the patch, maximum distance from the patch, direction of the centroid, and mean thickness
 
 ### Dependencies
 
-*patchTemplate.tif* files
+* **patchTemplate.tif** file that should be downloaded from this repository and dropped into images directory
+* **Multi-Template-Matching** + **IJ-OpenCV** Fiji plugins (installable via Update Sites)
+* **IJPB** Fiji plugin (installable via Update Sites)
 
-*Multi-Template-Matching* + *IJ-OpenCV* FIJI Plug-in
-*IJPB* FIJI Plug-in
 ### Version history
 
-Version 0.9 released on April 24, 2025.
+Version 1 released on April 25, 2025.
