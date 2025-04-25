@@ -1,281 +1,268 @@
 /*
- * Description: A tool to detect patches and compute metrics on protrusion.
+ * Description: A tool to detect patches and compute metrics on protrusions.
  * Developed for: Laurent & Emmanuelle, Germain's team
- * Author: Thomas Caille & Héloïse Monnet @ ORION-CIRB 
+ * Authors: Thomas Caille & Héloïse Monnet @ ORION-CIRB 
  * Date: April 2025
  * Repository: https://github.com/orion-cirb/ProtruJ_Morphometrics
- * Dependencies: patchTemplate files available on GitHub repository
+ * Dependencies: patchTemplate.tif file in input directory (to download from GitHub repository)
+ * 				 IJ-OpenCV-plugins, Multi-Template-Matching, and IJPB-plugins plugins (to install via Update Sites)
 */
 
+
 /////////////// GLOBAL VARIABLES ///////////////
-
-filamentSize = 8
-patchEnlarge = 10
-
-
+protrusionMinLength = 8 // TODO: indicate unit (pixels? µm?) 
+patchDilation = 10 // TODO: idem
 ///////////////////////////////////////////////
-// Ask for input directory
-inputDir = getDirectory("Please select a directory containing images to analyze");
-// Clear the ROI manager and close all opened images
+
+
+// Clear ROI manager and close all opened images
 roiManager("reset");
 close("*");
 
+// Ask for input directory
+inputDir = getDirectory("Please select a directory containing images to analyze");
+
+// Check patchTemplate.tif file is in input directory
 if(!File.exists(inputDir + "patchTemplate.tif")){
-	exit("Please download the patchTemplate.tif file and drop it into your image folder");
+	exit("Please download patchTemplate.tif file and drop it into your images directory.");
 }
-// Create an output result folder based on actual minute,hour ...
+
+// Get all files in input directory
+imgList = getFileList(inputDir);
+
+// Create a global output directory
 getDateAndTime(year, month, dayOfWeek, dayOfMonth, hour, minute, second, msec);
 outDir = inputDir+"Results-"+(month+1)+"-"+dayOfMonth+"_"+hour+"-"+minute+File.separator();
 if (!File.isDirectory(outDir)) {
 	File.makeDirectory(outDir);
 }
 
-// Get all files in the input directory
-list = getFileList(inputDir);
+// Create a results csv file
+resultsFile = File.open(outDir+ "results.csv");
+print(resultsFile,"Image name, Patch ID, Protusion ID, Nearest corner, Max distance from patch (μm), Centroid direction (degree), Mean thickness (μm)\n");
+File.close(resultsFile);
 
-fileResults = File.open(outDir+ "results.csv");
-		print(fileResults,"Image_Name, Pore_ID , Protusion_ID , Nearest_Corner , Distance_from_Pore (μm) , Protusion_Angle , Thickness_Mean (μm)\n");
-		File.close(fileResults);
-
-
-
-/////////////// Open and process images ///////////////
-//////////////////////////////////////////////////////
-
-
-
-// Loop through all files with .nd2 extension in the input directory
-for (i = 0; i < list.length; i++) {
-	if (endsWith(list[i], ".nd2")) {
+// Loop through all files with .nd2 extension in input directory
+for (i = 0; i < imgList.length; i++) {
+	if (endsWith(imgList[i], ".nd2")) {
+		print("Analyzing image " + imgList[i] + "...");
+		
+    	// Create a specific output directory based on image name
+		imgName = replace(imgList[i], ".nd2", "");
+    	imgOutDir = outDir+ imgName + File.separator();
+    	if (!File.isDirectory(imgOutDir)) {
+			File.makeDirectory(imgOutDir);
+		}
+		
+    	// Open patchTemplate.tif file
+    	run("Bio-Formats Importer", "open=["+inputDir+"patchTemplate.tif] color_mode=Default view=Hyperstack stack_order=XYCZT");
     	
-		imgName = replace(list[i],".nd2", "");
-    	// Create an specific output directory based on the actual image name
-    	imageOutDir = outDir+ imgName + File.separator();
-    	if (!File.isDirectory(imageOutDir)) {
-			File.makeDirectory(imageOutDir);
-		}  	
-    	// Open images, keep in mind, you must have the Template image in your input folder
-    	 
-    	run("Bio-Formats Importer", "open=["+inputDir + "patchTemplate.tif] color_mode=Default view=Hyperstack stack_order=XYCZT");
-    	run("Bio-Formats Importer", "open=["+inputDir + list[i]+"] color_mode=Default view=Hyperstack stack_order=XYCZT");
-    	// Set the diplayed channel to 3 (bright)
+    	// Open image
+    	run("Bio-Formats Importer", "open=["+inputDir+imgList[i]+"] color_mode=Default view=Hyperstack stack_order=XYCZT");
+    	// Z-project
     	run("Z Project...", "projection=[Average Intensity]");
-    	Stack.setChannel(3);
+    	close(imgList[i]);
     	// Let the user rotate the image (all 3 channels)
+    	Stack.setChannel(3);
     	run("Rotate... ");
-    	
-    	// Initiate a progress bar
-    	title = "[Progress]";
- 	 	run("Text Window...", "name="+ title +" width=25 height=2 monospaced");
-  		// Hide images during macro, greatly inprove speed
+ 	 	
+  		// Hide images during macro execution
     	setBatchMode(true);
     	
-    	// Found patches base on the 3rd channel (bright), to do so, smooth the image, apply a bandpass Filter to enhance the patches.
+    	// Split channels
     	run("Split Channels");
-    	selectImage("C3-AVG_"+list[i]);
+    	close("C1-AVG_"+imgList[i]);
+    	
+    	// DETECT PATCHES ON BRIGHTFIELD CHANNEL
+    	selectImage("C3-AVG_"+imgList[i]);
+    	// Preprocess image
     	run("Median...", "radius=6");
+    	//TODO: add run("Set Measurements...")
     	List.setMeasurements;
     	meanBright = List.getValue("Mean"); 
-    	run("Subtract...", "value="+meanBright+""); 
+    	run("Subtract...", "value="+meanBright); 
     	run("Bandpass Filter...", "filter_large=40 filter_small=3 suppress=None tolerance=5 autoscale saturate");
-    	rename("rawImage");
-    	// Here we use the Template matching algorithm, we provide a template and it will look for similar structure in the image.
-    	run("Template Matching Image", "template=[patchTemplate.tif] image=[rawImage] matching_method=[Normalised 0-mean cross-correlation] number_of_objects=50 score_threshold=0.40 maximal_overlap=0 add_roi show_result");
-    	// Working on channel-2 (green)
-    	selectImage("C2-AVG_"+list[i]);
-    	getPixelSize(unit, pixelWidth, pixelHeight);
+    	rename("brightImage");
+    	// Use Template matching algorithm to look for similar structures in the image than the one on patchTemplate.tif
+    	run("Template Matching Image", "template=[patchTemplate.tif] image=[brightImage] rotate=[] matching_method=[Normalised 0-mean cross-correlation] number_of_objects=50 score_threshold=0.40 maximal_overlap=0 add_roi");
     	
-    	// Preprocessing : enhance the Signal  substract the mean value of the image and apply a median filter
+    	// SEGMENT PROTRUSIONS CHANNEL
+    	selectImage("C2-AVG_"+imgList[i]);
+    	getPixelSize(unit, pixelWidth, pixelHeight);
+    	// Preprocess image
+    	//TODO: add run("Set Measurements...")
     	List.setMeasurements;
     	run("Median...", "radius=3");
     	medianFluo = List.getValue("Median");
-    	run("Subtract...", "value="+medianFluo+""); 
-    	
-    	// Set an automatic threshold to segment the patches
+    	run("Subtract...", "value="+medianFluo); // TODO: subtraction before median filtering?  
+    	// Threshold image with automated method
     	setAutoThreshold("Triangle dark");
 		setOption("BlackBackground", true);
 		run("Convert to Mask");
-		
-		//Save the resulting image 
-		saveAs("tiff", imageOutDir + "fluoImage");
-    	rename("fluoImage");
+		// Save segmentation result
+		saveAs("tiff", imgOutDir+"fluoBinaryMask");
+		rename("fluoMask");
     	
-    	
-    	
-/////////////// Create images of interest  ///////////////
-/////////////////////////////////////////////////////////
-    	
-    	
-    	
-    	// Loop throught all the Roi's, all the patches detected
-   	 	for (j = 0; j < roiManager("count"); j++) {
+    	// Initiate progress bar
+ 	 	run("Text Window...", "name=[Progress] width=25 height=2 monospaced");
+ 	 	
+    	// Loop through all ROIs = all detected patches
+    	for (j = 0; j < roiManager("count"); j++) {
+ 			// Update progress bar
+   	 		print("[Progress]", "\\Update:"+(j+1)+"/"+roiManager("count")+" ("+((j+1)*100)/roiManager("count")+"%)\n");
    	 		
- 			// Progress bar
-   	 		print(title, "\\Update:"+(j+1)+"/"+roiManager("count")+" ("+((j+1)*100)/roiManager("count")+"%)\n"+getBar((j+1), roiManager("count")));
-   	 		// select the bright image and the first ROi, retrieve the Standard Deviation in the Roi's
-   	 		selectImage("rawImage");
-   	 		getDimensions(width, height, channels, slices, frames);
-			roiManager("select",j);
+   	 		// Compute intensity standard deviation on brightfield channel, to filter out wrongly detected patches
+   	 		selectImage("brightImage");
+   	 		getDimensions(width, height, channels, slices, frames); //TODO: remove?
+			roiManager("select", j);
 			Roi.getCoordinates(xpoints, ypoints);
+			//TODO: add run("Set Measurements...")
 			List.setMeasurements;
 			
-			// As the patches are very bright and the outline darker, we filter patches by the difference between the max intensity and the min aka stdDev. 
-			// We also filter out patches at the edges and delete associated ROi's 
-			
-			if ((List.getValue("StdDev") < 10000) || (ypoints[2]-ypoints[1] > 110) || (ypoints[0] < 150 ) || ( xpoints[0] < 150)) {
+			// Patches are very bright with darker outline --> high intensity standard deviation, allowing us to filter out wrongly detected patches
+			// Ignore wrongly detected patches + patches wrongly oriented + patches at the edges and delete associated ROI
+			if ((List.getValue("StdDev") < 10000) || (ypoints[2]-ypoints[1] > 110) || (ypoints[0] < 150) || (xpoints[0] < 150)) { // TODO: use global variable=80 (see TODO below) instead of 150 + filter out patches on right and down borders as well using imgSize + remove (ypoints[2]-ypoints[1] > 110)?
 				roiManager("delete");
 				j=j-1;
-			} else {
-				// define the coordinates of the 5 corners
+			} else {				
+				// Crop binary mask around enlarged patch
+				selectImage("fluoMask");
+				roiManager("select", j);
+				run("Enlarge...", "enlarge=80"); // TODO: set 80 as a global variable
+				run("Duplicate...", " ");
+				
+				// Define coordinates of 5 corners of the patch
 				cornerX = newArray(245,220,136,136,220);
 				cornerY = newArray(167,131,131,202,202);
-				
-				selectImage("fluoImage");
-				run("Duplicate...", " ");
-				roiManager("select",j);
-				run("Enlarge...", "enlarge=80");
-				run("Duplicate...", " ");
-				
-				// Create a pentagon covering the patch  
-				makePolygon(cornerX[0],cornerY[0], cornerX[1],cornerY[1], cornerX[2],cornerY[2], cornerX[3],cornerY[3], cornerX[4],cornerY[4]);
+				// TODO: add small drawing on Github README file showing corners order
+				// Create a pentagon using these coordinates
+				makePolygon(cornerX[0],cornerY[0],cornerX[1],cornerY[1],cornerX[2],cornerY[2],cornerX[3],cornerY[3],cornerX[4],cornerY[4]);
 				// Fill it in white
 				setColor(255);
 				run("Fill");
 				run("Select None");
-				// Filter object by size,in pixel, to keep only the mask of the patch with protusions
-				run("Set Measurements...", "mean redirect=None decimal=2");
-				run("Analyze Particles...", "size=+3000-Infinity show=Masks exclude ");
+				// Filter out small objects to keep only the patch with attached protusions
+				run("Set Measurements...", "mean redirect=None decimal=2"); // TOO: remove?
+				run("Analyze Particles...", "size=3000-Infinity show=Masks exclude");
 				run("Invert LUT");
-				rename("ProtusionMask_of_Pore");
-				run("Duplicate...", " ");
+				rename("protrusions_mask");
 				
-				// Performe the skeletonize of the patch with protusions
+				// Skeletonize patch with attached protusions
+				run("Duplicate...", " ");
 				run("Skeletonize");
-				rename("Skel_of_Pore");
-				makePolygon(cornerX[0],cornerY[0], cornerX[1],cornerY[1], cornerX[2],cornerY[2], cornerX[3],cornerY[3], cornerX[4],cornerY[4]);
-				// Enlarge the "patch selection" and clear inside it, to keep only protusions skeleton,
-				run("Enlarge...", "enlarge="+patchEnlarge+" pixel");
+				rename("protrusions_skel");
+				// Clear enlarged pentagon, to keep protusions skeleton only
+				makePolygon(cornerX[0],cornerY[0],cornerX[1],cornerY[1],cornerX[2],cornerY[2],cornerX[3],cornerY[3],cornerX[4],cornerY[4]);
+				run("Enlarge...", "enlarge="+patchDilation+" pixel");
 				run("Clear", "slice");
 				run("Select None");
 				
-				// Create a pentagon covering the patch, clear all the signal outside the patch and then fill it in white, we will use it as a marker for the distance map 
-				run("Duplicate...", " ");
-				makePolygon(cornerX[0],cornerY[0], cornerX[1],cornerY[1], cornerX[2],cornerY[2], cornerX[3],cornerY[3], cornerX[4],cornerY[4]);
-				run("Enlarge...", "enlarge="+patchEnlarge+" pixel");
+				// Create marker for the geodesic distance map: fill pentagon in white and clear everything outside
+				run("Duplicate...", "title=marker");
+				makePolygon(cornerX[0],cornerY[0],cornerX[1],cornerY[1],cornerX[2],cornerY[2],cornerX[3],cornerY[3],cornerX[4],cornerY[4]);
+				run("Enlarge...", "enlarge="+patchDilation+" pixel");
 				run("Clear Outside");
 				run("Fill");
-				rename("PoreMask_of_Pore");
+				// Compute geodesic map to later retrieve distance between protusions extremity and the patch				
+				run("Geodesic Distance Map", "marker=marker mask=protrusions_mask distances=[Verwer (12,17,27,38)] output=[32 bits] normalize");
+				// TODO: Process > Math > Multiply by pixel size
+				// TODO: set calibration
 				
-				// Run the geodesic map to get the distance map of the protusions				
-				run("Geodesic Distance Map", "marker=PoreMask_of_Pore mask=ProtusionMask_of_Pore distances=[Verwer (12,17,27,38)] output=[16 bits] normalize");
-				// Analyse the particles inside the skeletonize image to retrieve Centroid and Max instensity (of the geodesic map)
-				run("Set Measurements...", "mean redirect=None decimal=2");
-				// Filter out the skeleton smaller than defined number of pixels
-				selectImage("Skel_of_Pore");
-				run("Analyze Particles...", "size="+filamentSize+"-Infinity display clear");
+				// Filter out small protrusions and analyze remaining one 			
+				run("Set Measurements...", "mean redirect=None decimal=2"); // TODO: remove
+				selectImage("protrusions_skel"); // TODO: remove
+				run("Analyze Particles...", "size="+protrusionMinLength+"-Infinity display clear"); // TODO: remove 
+				// TODO: do 1st Analyze Particles (redirect=protrusions_mask-geoddist) here
+				nProtrusions = nResults;
 				
-				// Store image size before the loop
-				sizeX = getWidth();
-				sizeY = getHeight();
-
-
-/////////////// Compute and write results ///////////////
-////////////////////////////////////////////////////////
-
-
-				// Loop thought all the line of the result table to retrieve information on each extension
-				for (k = 0; k < nResults; k++) {
-					// Initialized the result variable
-					params = ""+imgName;
-					
-					selectImage("Skel_of_Pore");
-					run("Set Measurements...", "min centroid redirect=ProtusionMask_of_Pore-geoddist decimal=2");
-					run("Properties...", "channels=1 slices=1 frames=1 pixel_width=1.0000 pixel_height=1.0000 voxel_depth=1.0000");				
-					run("Analyze Particles...", "size="+filamentSize+"-Infinity display clear overlay");
-						
-					// Define variables 
-					Max = getResult("Max", k);
-					X = getResult("X", k);
-					Y = getResult("Y", k);
-						
-					// Loop and check all the corners and find the closest one
-					closeCornerDistance = 500;
-					for (l = 0; l <= (cornerY.length-1); l++){
-						tempDistance = sqrt(pow((X - cornerX[l]),2) + pow((Y - cornerY[l]),2));
-						if (tempDistance < closeCornerDistance)  {
-							closeCornerDistance = tempDistance;
-							closeCorner = l+1;	
-						}
-					}
-					
-					// Here we will compute the angle from the center of the patch to the centroid of the extension using the trigonometry circle 	
-					a = sqrt(pow((sizeX/2 - sizeX),2)+ pow((sizeY/2 - sizeY/2),2));
-					b = sqrt(pow((sizeX - X),2)+ pow((sizeY/2 - Y),2));
-					c = sqrt(pow((X - sizeX/2),2) + pow((Y - sizeY/2),2));
-					angle = (acos((((a*a)+(c*c))-(b*b))/(2*a*c)))*(180/3.14);
-					if ( Y > sizeY/2) angle = 360-angle ;
-						
-					// Write results
-					params += ","+j+1;
-					params += ","+(k+1)+ ","+ closeCorner+","+(Max*pixelWidth)+ ","+angle;
-					
-					// Compute the local thickness of the whole patch with extension and clear the polygon patch to extract only extensions thickness 
-					selectImage("ProtusionMask_of_Pore");
-					run("Restore Selection");
-					run("Clear", "slice");
-					run("Select None");
-					run("Local Thickness (masked, calibrated, silent)");
-					run("Set Measurements...", "area mean min centroid median redirect=ProtusionMask_of_Pore_LocThk decimal=2");
-					selectImage("Skel_of_Pore");
-					run("Analyze Particles...", "size="+filamentSize+"-Infinity display clear overlay");
-			
-					// Get the Median value of the local thickness for each extension 
-					Mean_locThick = getResult("Mean", k);							
-					params += ","+ Mean_locThick;
+				if (nProtrusions == 0) {
+					params = imgName+","+(j+1)+",NaN,NaN,NaN,NaN,NaN";
 					File.append(params, outDir + "results.csv");
-					
+				} else {
+					// TODO: compute local thickness here
+									
+					// TODO: do 2nd Analyze Particles (redirect=protrusions_mask_LocThk) here, without clearing Results table
+	
+					// Loop through all the lines of the results table to retrieve information for each protrusion
+					for (k = 0; k < nResults; k++) { // TODO: use nProtrusions instead of nResults
+						selectImage("protrusions_skel"); // TODO: remove
+						run("Set Measurements...", "min centroid redirect=protrusions_mask-geoddist decimal=2"); // TODO: remove
+						run("Properties...", "channels=1 slices=1 frames=1 pixel_width=1.0000 pixel_height=1.0000 voxel_depth=1.0000"); // TODO: remove
+						run("Analyze Particles...", "size="+protrusionMinLength+"-Infinity display clear overlay"); // TODO: remove
+							
+						// Get protrusion centroid and max intensity on geodesic map = distance between protusion extremity and the patch	
+						maxDist = getResult("Max", k);
+						centroidX = getResult("X", k);
+						centroidY= getResult("Y", k);
+							
+						// Retrieve closest patch corner from protrusion centroid
+						closestCornerDistance = 1000;
+						closestCorner = 0;
+						for (l = 0; l < cornerY.length; l++){
+							tempDistance = sqrt(pow(centroidX-cornerX[l],2) + pow(centroidY-cornerY[l],2));
+							if (tempDistance < closestCornerDistance)  {
+								closestCornerDistance = tempDistance;
+								closestCorner = l+1;	
+							}
+						}
+						
+						// Compute angle between horizontal line and the line from the center of the patch to the centroid of the protrusion	
+						sizeX = getWidth();
+						sizeY = getHeight();
+						a = sizeX/2;
+						b = sqrt(pow(sizeX - centroidX, 2) + pow(sizeY/2 - centroidY, 2));
+						c = sqrt(pow(centroidX - sizeX/2, 2) + pow(centroidY - sizeY/2, 2));
+						angle = acos((a*a+c*c-b*b) / (2*a*c)) * 180 / 3.14;
+						if (centroidY > sizeY/2) angle = 360-angle ;
+						
+						// Compute the local thickness of the whole patch with extension and clear the polygon patch to extract only extensions thickness 
+						selectImage("protrusions_mask"); // TODO: remove	
+						run("Restore Selection"); // TODO: remove
+						run("Clear", "slice"); // TODO: remove
+						run("Select None"); // TODO: remove
+						run("Local Thickness (masked, calibrated, silent)"); // TODO: remove
+						run("Set Measurements...", "area mean min centroid median redirect=protrusions_mask_LocThk decimal=2"); // TODO: remove
+						selectImage("protrusions_skel"); // TODO: remove
+						run("Analyze Particles...", "size="+protrusionMinLength+"-Infinity display clear overlay"); // TODO: remove
+						// Get the Median value of the local thickness for each extension 
+						meanLocThick = getResult("Mean", k); // TODO: k+nProtrusions instead of k
+						
+						// Write results
+						params = imgName+","+(j+1)+","+(k+1)+","+closestCorner+","+maxDist*pixelWidth+","+angle+","+meanLocThick; // TODO: remove *pixelWidth, as geoddist now already calibrated
+						File.append(params, outDir + "results.csv");
 					}
-				// Save images 
-				if (isOpen("ProtusionMask_of_Pore_LocThk")){
-					selectImage("ProtusionMask_of_Pore_LocThk");
-					saveAs("tiff", imageOutDir +(j+1)+ "_LocThk_Pore");
-					selectImage("Skel_of_Pore");
-					saveAs("tiff", imageOutDir +(j+1)+ "_Skel_Pore");
-					selectImage("ProtusionMask_of_Pore-geoddist");
-					saveAs("tiff", imageOutDir +(j+1)+ "_Distance_Pore");
-				
+
+					// Save images
+					selectImage("protrusions_mask");
+					saveAs("tiff", imgOutDir+"patch"+(j+1)+"_mask");
+					selectImage("protrusions_skel");
+					//TODO: set calibration
+					saveAs("tiff", imgOutDir+"patch"+(j+1)+"_skel");
+					selectImage("protrusions_mask-geoddist");
+					saveAs("tiff", imgOutDir+"patch"+(j+1)+"_distMap");
+					selectImage("protrusions_mask_LocThk");
+					saveAs("tiff", imgOutDir+"patch"+(j+1)+"_locThck");
 				}
-			// Close all the opened windows
-			close("fluoImage-1");
-			close("*of_Pore*");
-			close("Results");
-					   	
-   	 		}
-   	 	close("Progress");
-    	}
-    // Save the patches Roi's in a zip file
-    roiManager("save", imageOutDir + "ROIs.zip");
-    roiManager("reset");
-   	print(title, "\\Close");
-   	close("*");
-   	setBatchMode(false);
+				
+				// Close all opened windows
+				close("fluoMask-1");
+				close("marker");
+				close("*patch*");
+				close("*protrusions*"); // TODO: remove
+				close("Results");
+	 		}
+		}
+		
+	    // Save patches ROIs in a zip file
+	    roiManager("save", imgOutDir + "patches.zip");
+	    
+	    // Close all windows
+	   	print("[Progress]", "\\Close");
+	    roiManager("reset");
+	   	close("*");
+	   	
+	   	setBatchMode(false);
     }
-}   	
+}
 
-
-
-/////////////// Functions ///////////////
-////////////////////////////////////////
-
-
-
-function getBar(p1, p2) {
-			        n = 20;
-			        bar1 = "--------------------";
-			        bar2 = "********************";
-			        index = round(n*(p1/p2));
-			        if (index<1) index = 1;
-			        if (index>n-1) index = n-1;
-			        return substring(bar2, 0, index) + substring(bar1, index+1, n);
-  }
- 
+print("Analysis done!");
