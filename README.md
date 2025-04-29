@@ -35,3 +35,8 @@
 ### Version history
 
 Version 1 released on April 25, 2025.
+
+### Angle Disposition
+
+![Patch_disposition](https://github.com/user-attachments/assets/9ee14349-463f-43ec-bea9-94cda6894ec1)
+
