@@ -10,8 +10,9 @@
 
 
 /////////////// GLOBAL VARIABLES ///////////////
-protrusionMinLength = 8 // TODO: indicate unit (pixels? µm?) 
-patchDilation = 10 // TODO: idem
+protrusionMinLengthMicron = 8 ; 
+patchDilationPixel = 10 ;
+fieldOfViewPixel = 100 ;
 ///////////////////////////////////////////////
 
 
@@ -56,7 +57,7 @@ for (i = 0; i < imgList.length; i++) {
 		
     	// Open patchTemplate.tif file
     	run("Bio-Formats Importer", "open=["+inputDir+"patchTemplate.tif] color_mode=Default view=Hyperstack stack_order=XYCZT");
-    	
+    	getDimensions(patchWidth, patchHeight, channels, slices, frames);
     	// Open image
     	run("Bio-Formats Importer", "open=["+inputDir+imgList[i]+"] color_mode=Default view=Hyperstack stack_order=XYCZT");
     	// Z-project
@@ -90,11 +91,13 @@ for (i = 0; i < imgList.length; i++) {
     	selectImage("C2-AVG_"+imgList[i]);
     	getPixelSize(unit, pixelWidth, pixelHeight);
     	// Preprocess image
-    	//TODO: add run("Set Measurements...")
+    	run("Set Measurements...", "median redirect=None decimal=2");
     	List.setMeasurements;
-    	run("Median...", "radius=3");
+    	
     	medianFluo = List.getValue("Median");
-    	run("Subtract...", "value="+medianFluo); // TODO: subtraction before median filtering?  
+    	run("Median...", "radius=3"); 
+    	run("Subtract...", "value="+medianFluo); 
+    	
     	// Threshold image with automated method
     	setAutoThreshold("Triangle dark");
 		setOption("BlackBackground", true);
@@ -104,7 +107,7 @@ for (i = 0; i < imgList.length; i++) {
 		rename("fluoMask");
     	
     	// Initiate progress bar
- 	 	run("Text Window...", "name=[Progress] width=25 height=2 monospaced");
+ 	 	run("Text Window...", "name=[Progress] width=25 height=1 monospaced");
  	 	
     	// Loop through all ROIs = all detected patches
     	for (j = 0; j < roiManager("count"); j++) {
@@ -113,28 +116,28 @@ for (i = 0; i < imgList.length; i++) {
    	 		
    	 		// Compute intensity standard deviation on brightfield channel, to filter out wrongly detected patches
    	 		selectImage("brightImage");
-   	 		getDimensions(width, height, channels, slices, frames); //TODO: remove?
+   	 		getDimensions(width, height, channels, slices, frames); 
 			roiManager("select", j);
 			Roi.getCoordinates(xpoints, ypoints);
-			//TODO: add run("Set Measurements...")
+			run("Set Measurements...", "standard redirect=None decimal=2");
 			List.setMeasurements;
 			
 			// Patches are very bright with darker outline --> high intensity standard deviation, allowing us to filter out wrongly detected patches
 			// Ignore wrongly detected patches + patches wrongly oriented + patches at the edges and delete associated ROI
-			if ((List.getValue("StdDev") < 10000) || (ypoints[2]-ypoints[1] > 110) || (ypoints[0] < 150) || (xpoints[0] < 150)) { // TODO: use global variable=80 (see TODO below) instead of 150 + filter out patches on right and down borders as well using imgSize + remove (ypoints[2]-ypoints[1] > 110)?
+			if ((List.getValue("StdDev") < 10000) || (ypoints[0] < (fieldOfViewPixel + patchHeight/2)) || (xpoints[0] < (fieldOfViewPixel + patchWidth/2))|| (xpoints[1] > width-(fieldOfViewPixel + patchWidth/2))|| (ypoints[1] > height-(fieldOfViewPixel + patchHeight/2))) { // TODO: use global variable=80 (see TODO below) instead of 150 + filter out patches on right and down borders as well using imgSize + remove (ypoints[2]-ypoints[1] > 110)?
 				roiManager("delete");
 				j=j-1;
 			} else {				
 				// Crop binary mask around enlarged patch
 				selectImage("fluoMask");
 				roiManager("select", j);
-				run("Enlarge...", "enlarge=80"); // TODO: set 80 as a global variable
+				run("Enlarge...", "enlarge="+fieldOfViewPixel); 
 				run("Duplicate...", " ");
-				
+				getDimensions(widthEnlarge, heightEnlarge, channels, slices, frames);
 				// Define coordinates of 5 corners of the patch
-				cornerX = newArray(245,220,136,136,220);
-				cornerY = newArray(167,131,131,202,202);
-				// TODO: add small drawing on Github README file showing corners order
+				cornerX = newArray(widthEnlarge/2+58,widthEnlarge/2+33,widthEnlarge/2-51,widthEnlarge/2-51,widthEnlarge/2+33);
+				cornerY = newArray(heightEnlarge/2,heightEnlarge/2-36,heightEnlarge/2-36,heightEnlarge/2+35,heightEnlarge/2+35);
+				
 				// Create a pentagon using these coordinates
 				makePolygon(cornerX[0],cornerY[0],cornerX[1],cornerY[1],cornerX[2],cornerY[2],cornerX[3],cornerY[3],cornerX[4],cornerY[4]);
 				// Fill it in white
@@ -153,47 +156,50 @@ for (i = 0; i < imgList.length; i++) {
 				rename("protrusions_skel");
 				// Clear enlarged pentagon, to keep protusions skeleton only
 				makePolygon(cornerX[0],cornerY[0],cornerX[1],cornerY[1],cornerX[2],cornerY[2],cornerX[3],cornerY[3],cornerX[4],cornerY[4]);
-				run("Enlarge...", "enlarge="+patchDilation+" pixel");
+				run("Enlarge...", "enlarge="+patchDilationPixel+" pixel");
 				run("Clear", "slice");
 				run("Select None");
 				
 				// Create marker for the geodesic distance map: fill pentagon in white and clear everything outside
 				run("Duplicate...", "title=marker");
 				makePolygon(cornerX[0],cornerY[0],cornerX[1],cornerY[1],cornerX[2],cornerY[2],cornerX[3],cornerY[3],cornerX[4],cornerY[4]);
-				run("Enlarge...", "enlarge="+patchDilation+" pixel");
+				run("Enlarge...", "enlarge="+patchDilationPixel+" pixel");
 				run("Clear Outside");
 				run("Fill");
 				// Compute geodesic map to later retrieve distance between protusions extremity and the patch				
 				run("Geodesic Distance Map", "marker=marker mask=protrusions_mask distances=[Verwer (12,17,27,38)] output=[32 bits] normalize");
-				// TODO: Process > Math > Multiply by pixel size
-				// TODO: set calibration
+				run("Multiply...", "value=" + pixelWidth);
+				run("Properties...", "channels=1 slices=1 frames=1 pixel_width="+pixelWidth+" pixel_height="+pixelHeight+" voxel_depth=1");
+				// Filter out small protrusions and analyze remaining one 	
+				run("Set Measurements...", "min centroid redirect=protrusions_mask-geoddist decimal=2");
 				
-				// Filter out small protrusions and analyze remaining one 			
-				run("Set Measurements...", "mean redirect=None decimal=2"); // TODO: remove
-				selectImage("protrusions_skel"); // TODO: remove
-				run("Analyze Particles...", "size="+protrusionMinLength+"-Infinity display clear"); // TODO: remove 
-				// TODO: do 1st Analyze Particles (redirect=protrusions_mask-geoddist) here
+				selectImage("protrusions_skel");
+				run("Analyze Particles...", "size="+protrusionMinLengthMicron+"-Infinity display clear overlay");
 				nProtrusions = nResults;
 				
 				if (nProtrusions == 0) {
 					params = imgName+","+(j+1)+",NaN,NaN,NaN,NaN,NaN";
 					File.append(params, outDir + "results.csv");
 				} else {
-					// TODO: compute local thickness here
-									
-					// TODO: do 2nd Analyze Particles (redirect=protrusions_mask_LocThk) here, without clearing Results table
+
+					// Compute the local thickness of the whole patch with extension and clear the polygon patch to extract only extensions thickness 
+					selectImage("protrusions_mask"); 	
+					run("Restore Selection"); 
+					run("Clear", "slice"); 
+					run("Select None");
+					run("Local Thickness (masked, calibrated, silent)");
+					run("Set Measurements...", "area mean min centroid redirect=protrusions_mask_LocThk decimal=2"); 
+					selectImage("protrusions_skel"); 
+					run("Analyze Particles...", "size="+protrusionMinLengthMicron+"-Infinity display overlay");
+					
 	
 					// Loop through all the lines of the results table to retrieve information for each protrusion
-					for (k = 0; k < nResults; k++) { // TODO: use nProtrusions instead of nResults
-						selectImage("protrusions_skel"); // TODO: remove
-						run("Set Measurements...", "min centroid redirect=protrusions_mask-geoddist decimal=2"); // TODO: remove
-						run("Properties...", "channels=1 slices=1 frames=1 pixel_width=1.0000 pixel_height=1.0000 voxel_depth=1.0000"); // TODO: remove
-						run("Analyze Particles...", "size="+protrusionMinLength+"-Infinity display clear overlay"); // TODO: remove
-							
+					for (k = 0; k < nProtrusions; k++) { 
+						 	
 						// Get protrusion centroid and max intensity on geodesic map = distance between protusion extremity and the patch	
 						maxDist = getResult("Max", k);
-						centroidX = getResult("X", k);
-						centroidY= getResult("Y", k);
+						centroidX = getResult("X", k)/pixelWidth;
+						centroidY= getResult("Y", k)/pixelHeight;
 							
 						// Retrieve closest patch corner from protrusion centroid
 						closestCornerDistance = 1000;
@@ -212,23 +218,14 @@ for (i = 0; i < imgList.length; i++) {
 						a = sizeX/2;
 						b = sqrt(pow(sizeX - centroidX, 2) + pow(sizeY/2 - centroidY, 2));
 						c = sqrt(pow(centroidX - sizeX/2, 2) + pow(centroidY - sizeY/2, 2));
-						angle = acos((a*a+c*c-b*b) / (2*a*c)) * 180 / 3.14;
+						angle = acos((a*a+c*c-b*b) / (2*a*c))  *180 / 3.14 ;
 						if (centroidY > sizeY/2) angle = 360-angle ;
-						
-						// Compute the local thickness of the whole patch with extension and clear the polygon patch to extract only extensions thickness 
-						selectImage("protrusions_mask"); // TODO: remove	
-						run("Restore Selection"); // TODO: remove
-						run("Clear", "slice"); // TODO: remove
-						run("Select None"); // TODO: remove
-						run("Local Thickness (masked, calibrated, silent)"); // TODO: remove
-						run("Set Measurements...", "area mean min centroid median redirect=protrusions_mask_LocThk decimal=2"); // TODO: remove
-						selectImage("protrusions_skel"); // TODO: remove
-						run("Analyze Particles...", "size="+protrusionMinLength+"-Infinity display clear overlay"); // TODO: remove
-						// Get the Median value of the local thickness for each extension 
-						meanLocThick = getResult("Mean", k); // TODO: k+nProtrusions instead of k
+
+						// Get the Mean value of the local thickness for each extension 
+						meanLocThick = getResult("Mean", k+nProtrusions); 
 						
 						// Write results
-						params = imgName+","+(j+1)+","+(k+1)+","+closestCorner+","+maxDist*pixelWidth+","+angle+","+meanLocThick; // TODO: remove *pixelWidth, as geoddist now already calibrated
+						params = imgName+","+(j+1)+","+(k+1)+","+closestCorner+","+maxDist+","+angle+","+meanLocThick; 
 						File.append(params, outDir + "results.csv");
 					}
 
@@ -236,7 +233,6 @@ for (i = 0; i < imgList.length; i++) {
 					selectImage("protrusions_mask");
 					saveAs("tiff", imgOutDir+"patch"+(j+1)+"_mask");
 					selectImage("protrusions_skel");
-					//TODO: set calibration
 					saveAs("tiff", imgOutDir+"patch"+(j+1)+"_skel");
 					selectImage("protrusions_mask-geoddist");
 					saveAs("tiff", imgOutDir+"patch"+(j+1)+"_distMap");
@@ -248,7 +244,7 @@ for (i = 0; i < imgList.length; i++) {
 				close("fluoMask-1");
 				close("marker");
 				close("*patch*");
-				close("*protrusions*"); // TODO: remove
+				close("*protrusions*"); 
 				close("Results");
 	 		}
 		}
