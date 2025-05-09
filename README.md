@@ -3,7 +3,7 @@
 * **Developed by:** Thomas & Héloïse
 * **Developed for:** Laurent & Emmanuelle
 * **Team:** Germain
-* **Date:** April 2025
+* **Date:** May 2025
 * **Software:** Fiji
 
 
@@ -26,6 +26,11 @@
      * Run skeletonization + geodesic distance map + local thickness from the resulting mask
      * For each protrusion (= skeleton), compute the following: nearest corner of the patch, maximum distance from the patch, direction of the centroid, and mean thickness
 
+ #### Patch corners positioning
+
+<img src="https://github.com/user-attachments/assets/9ee14349-463f-43ec-bea9-94cda6894ec1" width="200">
+
+
 ### Dependencies
 
 * **patchTemplate.tif** file that should be downloaded from this repository and dropped into images directory
@@ -34,9 +39,5 @@
 
 ### Version history
 
-Version 1 released on April 25, 2025.
-
-### Angle Disposition
-
-![Patch_disposition](https://github.com/user-attachments/assets/9ee14349-463f-43ec-bea9-94cda6894ec1)
+Version 1 released on May 9, 2025.
 
