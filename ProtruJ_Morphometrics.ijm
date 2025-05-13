@@ -58,7 +58,8 @@ for (i = 0; i < imgList.length; i++) {
     	// Open patchTemplate.tif file
     	run("Bio-Formats Importer", "open=["+inputDir+"patchTemplate.tif] color_mode=Default view=Hyperstack stack_order=XYCZT");
     	getDimensions(patchWidth, patchHeight, channels, slices, frames);
-    	
+    	Color.setForeground("white");
+    	Color.setBackground("black");
     	// Open image
     	run("Bio-Formats Importer", "open=["+inputDir+imgList[i]+"] color_mode=Default view=Hyperstack stack_order=XYCZT");
     	// Z-project
@@ -169,6 +170,7 @@ for (i = 0; i < imgList.length; i++) {
 				run("Enlarge...", "enlarge="+patchDilation+" pixel");
 				run("Clear Outside");
 				run("Fill");
+				
 				// Compute geodesic map to later retrieve distance between protusions extremity and the patch				
 				run("Geodesic Distance Map", "marker=marker mask=protrusions_mask distances=[Verwer (12,17,27,38)] output=[32 bits] normalize");
 				run("Multiply...", "value=" + pixelWidth);
