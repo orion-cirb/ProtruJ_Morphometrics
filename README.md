@@ -39,5 +39,5 @@
 
 ### Version history
 
-Version 1 released on May 9, 2025.
+Version 1 released on May 14, 2025.
 
