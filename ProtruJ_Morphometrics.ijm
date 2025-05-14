@@ -43,6 +43,10 @@ resultsFile = File.open(outDir+ "results.csv");
 print(resultsFile,"Image name, Patch ID, Protusion ID, Nearest corner, Max distance from patch (μm), Centroid direction (degree), Mean thickness (μm)\n");
 File.close(resultsFile);
 
+// Set foreground and background colors
+Color.setForeground("white");
+Color.setBackground("black");
+
 // Loop through all files with .nd2 extension in input directory
 for (i = 0; i < imgList.length; i++) {
 	if (endsWith(imgList[i], ".nd2")) {
@@ -58,8 +62,7 @@ for (i = 0; i < imgList.length; i++) {
     	// Open patchTemplate.tif file
     	run("Bio-Formats Importer", "open=["+inputDir+"patchTemplate.tif] color_mode=Default view=Hyperstack stack_order=XYCZT");
     	getDimensions(patchWidth, patchHeight, channels, slices, frames);
-    	Color.setForeground("white");
-    	Color.setBackground("black");
+
     	// Open image
     	run("Bio-Formats Importer", "open=["+inputDir+imgList[i]+"] color_mode=Default view=Hyperstack stack_order=XYCZT");
     	// Z-project
